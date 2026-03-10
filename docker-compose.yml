@@ -1,0 +1,32 @@
+services:
+
+  backend:
+    build: ./backend
+    container_name: masscan-studio-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - masscan_db:/data
+    environment:
+      - DATABASE_URL=sqlite:////data/masscan_studio.db
+      - MASSCAN_PATH=masscan
+      - NMAP_PATH=nmap
+      - DEFAULT_SCAN_RATE=1000
+      - CORS_ORIGINS=http://localhost,http://localhost:80
+    # masscan needs raw socket access to send TCP SYN packets
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  frontend:
+    build: ./frontend
+    container_name: masscan-studio-ui
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  masscan_db:

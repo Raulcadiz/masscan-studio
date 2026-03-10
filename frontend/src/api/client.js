@@ -1,0 +1,39 @@
+const BASE = '/api'
+
+async function req(path, opts = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  })
+  if (res.status === 204) return null
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+export const api = {
+  // Scans
+  listScans: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return req(`/scans${q ? `?${q}` : ''}`)
+  },
+  getScan:      (id)    => req(`/scans/${id}`),
+  createScan:   (data)  => req('/scans', { method: 'POST', body: JSON.stringify(data) }),
+  deleteScan:   (id)    => req(`/scans/${id}`, { method: 'DELETE' }),
+  getScanHosts: (id)    => req(`/scans/${id}/hosts`),
+  compareScans: (a, b)  => req('/scans/compare', {
+    method: 'POST',
+    body: JSON.stringify({ scan_id_a: a, scan_id_b: b }),
+  }),
+
+  // Ports
+  portStats:  (scan_id) => req(`/ports/stats${scan_id != null ? `?scan_id=${scan_id}` : ''}`),
+  topPorts:   (limit = 20, scan_id) =>
+    req(`/ports/top?limit=${limit}${scan_id != null ? `&scan_id=${scan_id}` : ''}`),
+  services:   (scan_id) => req(`/ports/services${scan_id != null ? `?scan_id=${scan_id}` : ''}`),
+
+  // Reports — returns a URL string (for <a href> download)
+  reportUrl: (scan_id, format = 'json') => `${BASE}/reports/${scan_id}?format=${format}`,
+}
