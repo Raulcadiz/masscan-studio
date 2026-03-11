@@ -10,7 +10,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.core.masscan_wrapper import MasscanWrapper, MasscanError
+from app.core.masscan_wrapper import MasscanWrapper, MasscanError, _stopped_scans
 from app.core.nmap_wrapper import NmapWrapper
 from app.db.database import engine
 from app.models.models import Host, Port, Scan
@@ -60,7 +60,13 @@ class ScanOrchestrator:
                 ports=ports,
                 rate=rate,
                 progress_cb=on_partial,
+                scan_id=scan_id,
             )
+
+            # Was the scan stopped by the user?
+            was_stopped = scan_id in _stopped_scans
+            if was_stopped:
+                _stopped_scans.discard(scan_id)
 
             # Save any hosts discovered in the final parse that weren't in a partial flush
             final_new = {ip: p for ip, p in hosts_data.items() if ip not in seen_ips}
@@ -69,12 +75,15 @@ class ScanOrchestrator:
                 counters["hosts"] += h
                 counters["ports"] += p
 
-            # Optionally enrich with nmap (runs after all masscan results are saved)
-            if nmap_enabled:
-                await self._enrich_with_nmap(scan_id)
-
             self._update_counts(scan_id, counters["hosts"], counters["ports"])
-            self._mark_scan_status(scan_id, "completed")
+
+            if was_stopped:
+                self._mark_scan_status(scan_id, "stopped")
+            else:
+                # Optionally enrich with nmap (only for fully completed scans)
+                if nmap_enabled:
+                    await self._enrich_with_nmap(scan_id)
+                self._mark_scan_status(scan_id, "completed")
 
         except MasscanError as e:
             self._mark_scan_status(scan_id, "failed", str(e))

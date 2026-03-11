@@ -22,6 +22,7 @@ export const api = {
   getScan:      (id)    => req(`/scans/${id}`),
   createScan:   (data)  => req('/scans', { method: 'POST', body: JSON.stringify(data) }),
   deleteScan:   (id)    => req(`/scans/${id}`, { method: 'DELETE' }),
+  stopScan:     (id)    => req(`/scans/${id}/stop`, { method: 'POST' }),
   getScanHosts: (id)    => req(`/scans/${id}/hosts`),
   compareScans: (a, b)  => req('/scans/compare', {
     method: 'POST',

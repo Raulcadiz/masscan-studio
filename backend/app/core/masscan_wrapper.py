@@ -19,6 +19,11 @@ from typing import Callable, Dict, List, Optional
 from app.config import settings
 
 
+# ── Process registry (module-level so stop endpoint can reach it) ─────────────
+_active_procs: Dict[int, subprocess.Popen] = {}   # scan_id → process
+_stopped_scans: set = set()                        # scan_ids killed by user
+
+
 class MasscanError(Exception):
     pass
 
@@ -37,6 +42,7 @@ class MasscanWrapper:
         ports: str,
         rate: int = 1000,
         progress_cb: Optional[Callable[[Dict[str, List[Dict]]], None]] = None,
+        scan_id: Optional[int] = None,
     ) -> Dict[str, List[Dict]]:
         """
         Run masscan and return results organized by IP.
@@ -61,13 +67,32 @@ class MasscanWrapper:
         try:
             cmd = self._build_command(targets, ports, rate, output_file)
             await asyncio.to_thread(
-                self._execute_sync, cmd, output_file, progress_cb
+                self._execute_sync, cmd, output_file, progress_cb, scan_id
             )
             raw = self._parse_output_file(output_file)
             return self._organize_by_ip(raw)
         finally:
             if os.path.exists(output_file):
                 os.unlink(output_file)
+
+    @staticmethod
+    def kill_scan(scan_id: int) -> bool:
+        """
+        Send SIGTERM to the running masscan process for this scan.
+        Partial results already saved via progress_cb will be preserved.
+        Returns True if a process was found and signalled.
+        """
+        _stopped_scans.add(scan_id)
+        proc = _active_procs.pop(scan_id, None)
+        if proc and proc.poll() is None:
+            proc.terminate()
+            return True
+        return False
+
+    @staticmethod
+    def was_stopped(scan_id: int) -> bool:
+        """Check (and clear) whether this scan was user-stopped."""
+        return _stopped_scans.discard(scan_id) is not None or scan_id not in _stopped_scans
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -83,6 +108,7 @@ class MasscanWrapper:
             *target_list,
             f"-p{ports}",
             f"--rate={rate}",
+            "--exclude", "255.255.255.255",   # required by masscan for large ranges
             "-oJ", output_file,
             "--wait=3",
         ]
@@ -92,6 +118,7 @@ class MasscanWrapper:
         cmd: List[str],
         output_file: str,
         progress_cb: Optional[Callable] = None,
+        scan_id: Optional[int] = None,
         poll_interval: int = 30,
     ) -> None:
         """
@@ -111,6 +138,9 @@ class MasscanWrapper:
                 f"masscan not found at '{self.masscan_path}'. "
                 "Install masscan and make sure it's in PATH."
             )
+
+        if scan_id is not None:
+            _active_procs[scan_id] = proc
 
         if progress_cb is not None:
             known_ips: set = set()
@@ -132,8 +162,13 @@ class MasscanWrapper:
             threading.Thread(target=_monitor, daemon=True).start()
 
         proc.wait()
+        _active_procs.pop(scan_id, None)
 
         if proc.returncode not in (0, None):
+            # If user triggered a stop, swallow the error — partial results are fine
+            if scan_id is not None and scan_id in _stopped_scans:
+                return   # caller will detect via was_stopped()
+
             stderr = proc.stderr.read().decode(errors="replace").strip()
             if "FAIL" in stderr.upper() or not stderr:
                 raise MasscanError(

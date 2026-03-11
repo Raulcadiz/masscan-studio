@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Clock, FileText } from 'lucide-react'
+import { ArrowLeft, Download, Clock, FileText, Square } from 'lucide-react'
 import { api } from '../api/client'
 import Badge from '../components/ui/Badge'
 import Spinner from '../components/ui/Spinner'
@@ -27,8 +27,9 @@ export default function ScanDetailPage() {
   const [scan, setScan]       = useState(null)
   const [hosts, setHosts]     = useState([])
   const [stats, setStats]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState(null)
+  const [stopping, setStopping] = useState(false)
   const intervalRef = useRef(null)
 
   async function fetchScan() {
@@ -36,7 +37,7 @@ export default function ScanDetailPage() {
       const s = await api.getScan(id)
       setScan(s)
 
-      if (s.status === 'completed') {
+      if (s.status === 'completed' || s.status === 'stopped') {
         const [h, p] = await Promise.all([
           api.getScanHosts(id),
           api.portStats(Number(id)),
@@ -46,7 +47,7 @@ export default function ScanDetailPage() {
         clearInterval(intervalRef.current)
       }
 
-      if (s.status === 'failed') {
+      if (s.status === 'failed' || s.status === 'stopped') {
         clearInterval(intervalRef.current)
       }
     } catch (e) {
@@ -83,6 +84,17 @@ export default function ScanDetailPage() {
 
   const isActive = scan.status === 'pending' || scan.status === 'running'
 
+  async function handleStop() {
+    if (!confirm('Stop the scan? Partial results found so far will be saved.')) return
+    setStopping(true)
+    try {
+      await api.stopScan(id)
+    } catch (e) {
+      alert(e.message)
+      setStopping(false)
+    }
+  }
+
   // ETA calculation for running scans
   const totalSecs   = estimateScanSeconds(scan.targets, scan.ports, scan.rate)
   const elapsedSecs = scan.started_at
@@ -118,8 +130,20 @@ export default function ScanDetailPage() {
             </p>
           </div>
 
+          {/* Stop button — visible while scan is running */}
+          {isActive && (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+            >
+              {stopping ? <Spinner size={12} /> : <Square size={12} />}
+              {stopping ? 'Stopping…' : 'Stop Scan'}
+            </button>
+          )}
+
           {/* Export buttons */}
-          {scan.status === 'completed' && (
+          {(scan.status === 'completed' || scan.status === 'stopped') && (
             <div className="flex gap-2 flex-wrap">
               <a
                 href={api.reportTxtUrl(scan.id)}

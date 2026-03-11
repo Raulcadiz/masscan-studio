@@ -14,6 +14,7 @@ from app.models.models import (
     ScanOut,
 )
 from app.core.scanner import ScanOrchestrator
+from app.core.masscan_wrapper import MasscanWrapper
 from app.core.diff import compare_scans
 from app.api._utils import load_hosts_with_ports
 
@@ -102,6 +103,24 @@ def delete_scan(scan_id: int, session: Session = Depends(get_session)):
 
     session.delete(scan)
     session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Stop a running scan (saves partial results)
+# ---------------------------------------------------------------------------
+
+@router.post("/{scan_id}/stop", status_code=200)
+def stop_scan(scan_id: int, session: Session = Depends(get_session)):
+    scan = session.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status not in ("running", "pending"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Scan is not running (status: {scan.status})",
+        )
+    MasscanWrapper.kill_scan(scan_id)
+    return {"message": "Stop signal sent. Partial results will be saved."}
 
 
 # ---------------------------------------------------------------------------
