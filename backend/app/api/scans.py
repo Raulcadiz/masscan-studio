@@ -7,7 +7,6 @@ from app.models.models import (
     Host,
     HostOut,
     Port,
-    PortOut,
     Scan,
     ScanCompareRequest,
     ScanCreate,
@@ -16,6 +15,7 @@ from app.models.models import (
 )
 from app.core.scanner import ScanOrchestrator
 from app.core.diff import compare_scans
+from app.api._utils import load_hosts_with_ports
 
 router = APIRouter()
 orchestrator = ScanOrchestrator()
@@ -79,22 +79,7 @@ def get_scan_hosts(scan_id: int, session: Session = Depends(get_session)):
     scan = session.get(Scan, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
-
-    hosts = session.exec(select(Host).where(Host.scan_id == scan_id)).all()
-
-    result = []
-    for host in hosts:
-        ports = session.exec(select(Port).where(Port.host_id == host.id)).all()
-        result.append(
-            HostOut(
-                id=host.id,
-                ip=host.ip,
-                hostname=host.hostname,
-                os_guess=host.os_guess,
-                ports=[PortOut.model_validate(p) for p in ports],
-            )
-        )
-    return result
+    return load_hosts_with_ports(scan_id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +95,6 @@ def delete_scan(scan_id: int, session: Session = Depends(get_session)):
     # Cascade delete hosts and ports
     hosts = session.exec(select(Host).where(Host.scan_id == scan_id)).all()
     for host in hosts:
-        session.exec(select(Port).where(Port.host_id == host.id))
         ports = session.exec(select(Port).where(Port.host_id == host.id)).all()
         for port in ports:
             session.delete(port)

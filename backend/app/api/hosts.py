@@ -3,7 +3,8 @@ from sqlmodel import Session, select
 from typing import List, Optional
 
 from app.db.database import get_session
-from app.models.models import Host, HostOut, Port, PortOut
+from app.models.models import Host, HostOut, Port
+from app.api._utils import build_host_out
 
 router = APIRouter()
 
@@ -26,21 +27,13 @@ def list_hosts(
 
     result = []
     for host in hosts:
-        ports = session.exec(select(Port).where(Port.host_id == host.id)).all()
+        host_out = build_host_out(host, session)
 
-        # Apply port filter
-        if port and not any(p.port == port for p in ports):
+        # Apply port filter after loading (port list already fetched)
+        if port and not any(p.port == port for p in host_out.ports):
             continue
 
-        result.append(
-            HostOut(
-                id=host.id,
-                ip=host.ip,
-                hostname=host.hostname,
-                os_guess=host.os_guess,
-                ports=[PortOut.model_validate(p) for p in ports],
-            )
-        )
+        result.append(host_out)
     return result
 
 
@@ -49,12 +42,4 @@ def get_host(host_id: int, session: Session = Depends(get_session)):
     host = session.get(Host, host_id)
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-
-    ports = session.exec(select(Port).where(Port.host_id == host.id)).all()
-    return HostOut(
-        id=host.id,
-        ip=host.ip,
-        hostname=host.hostname,
-        os_guess=host.os_guess,
-        ports=[PortOut.model_validate(p) for p in ports],
-    )
+    return build_host_out(host, session)

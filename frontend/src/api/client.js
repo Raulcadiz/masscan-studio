@@ -34,6 +34,9 @@ export const api = {
     req(`/ports/top?limit=${limit}${scan_id != null ? `&scan_id=${scan_id}` : ''}`),
   services:   (scan_id) => req(`/ports/services${scan_id != null ? `?scan_id=${scan_id}` : ''}`),
 
-  // Reports — returns a URL string (for <a href> download)
-  reportUrl: (scan_id, format = 'json') => `${BASE}/reports/${scan_id}?format=${format}`,
+  // Reports — return URL strings for use in <a href> download links
+  reportUrl:      (scan_id, format = 'json') => `${BASE}/reports/${scan_id}?format=${format}`,
+  reportTxtUrl:   (scan_id)                  => `${BASE}/reports/${scan_id}?format=txt`,
+  allReportTxtUrl: ()                        => `${BASE}/reports/all/txt`,
+  allReportZipUrl: ()                        => `${BASE}/reports/all/zip`,
 }

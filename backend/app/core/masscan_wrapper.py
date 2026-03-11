@@ -10,8 +10,11 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import tempfile
-from typing import Dict, List
+import threading
+import time
+from typing import Callable, Dict, List, Optional
 
 from app.config import settings
 
@@ -33,9 +36,15 @@ class MasscanWrapper:
         targets: str,
         ports: str,
         rate: int = 1000,
+        progress_cb: Optional[Callable[[Dict[str, List[Dict]]], None]] = None,
     ) -> Dict[str, List[Dict]]:
         """
         Run masscan and return results organized by IP.
+
+        If `progress_cb` is provided it will be called every ~30 s with
+        a dict of *newly-discovered* hosts (same format as the return value).
+        This allows the caller to persist partial results to the DB while
+        masscan is still running.
 
         Returns:
             {
@@ -51,7 +60,9 @@ class MasscanWrapper:
 
         try:
             cmd = self._build_command(targets, ports, rate, output_file)
-            await self._execute(cmd)
+            await asyncio.to_thread(
+                self._execute_sync, cmd, output_file, progress_cb
+            )
             raw = self._parse_output_file(output_file)
             return self._organize_by_ip(raw)
         finally:
@@ -65,34 +76,69 @@ class MasscanWrapper:
     def _build_command(
         self, targets: str, ports: str, rate: int, output_file: str
     ) -> List[str]:
+        # Split targets on commas or whitespace so multiple CIDRs become separate args
+        target_list = [t for t in re.split(r"[,\s]+", targets) if t]
         return [
             self.masscan_path,
-            targets,
+            *target_list,
             f"-p{ports}",
             f"--rate={rate}",
             "-oJ", output_file,
             "--wait=3",
         ]
 
-    async def _execute(self, cmd: List[str]) -> None:
+    def _execute_sync(
+        self,
+        cmd: List[str],
+        output_file: str,
+        progress_cb: Optional[Callable] = None,
+        poll_interval: int = 30,
+    ) -> None:
+        """
+        Run masscan via Popen.  If progress_cb is given, a daemon thread
+        reads the (still-being-written) output file every `poll_interval`
+        seconds and calls progress_cb({new_ip: [ports]}) with newly found
+        hosts since the last check.
+        """
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
-            _, stderr = await process.communicate()
         except FileNotFoundError:
             raise MasscanError(
                 f"masscan not found at '{self.masscan_path}'. "
                 "Install masscan and make sure it's in PATH."
             )
 
-        if process.returncode not in (0, None):
-            error_text = stderr.decode(errors="replace").strip()
-            # masscan exits 1 on --wait timeout even with valid results
-            if "FAIL" in error_text.upper() or not error_text:
-                raise MasscanError(f"masscan exited with code {process.returncode}: {error_text}")
+        if progress_cb is not None:
+            known_ips: set = set()
+
+            def _monitor() -> None:
+                while proc.poll() is None:
+                    time.sleep(poll_interval)
+                    raw = self._parse_ndjson(output_file)       # safe for partial files
+                    organized = self._organize_by_ip(raw)
+                    new = {ip: p for ip, p in organized.items()
+                           if ip not in known_ips}
+                    if new:
+                        known_ips.update(new)
+                        try:
+                            progress_cb(new)
+                        except Exception:
+                            pass  # never crash the monitor thread
+
+            threading.Thread(target=_monitor, daemon=True).start()
+
+        proc.wait()
+
+        if proc.returncode not in (0, None):
+            stderr = proc.stderr.read().decode(errors="replace").strip()
+            if "FAIL" in stderr.upper() or not stderr:
+                raise MasscanError(
+                    f"masscan exited with code {proc.returncode}: {stderr}"
+                )
 
     def _parse_output_file(self, filepath: str) -> List[Dict]:
         try:

@@ -1,11 +1,19 @@
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select, func
-from typing import List, Optional
+from typing import Optional
 
 from app.db.database import get_session
 from app.models.models import Host, Port
 
 router = APIRouter()
+
+
+def _filter_by_scan(query, scan_id: Optional[int]):
+    """Narrow a Port query to hosts belonging to a specific scan."""
+    if scan_id:
+        host_ids = select(Host.id).where(Host.scan_id == scan_id)
+        query = query.where(Port.host_id.in_(host_ids))
+    return query
 
 
 @router.get("/stats")
@@ -23,11 +31,7 @@ def port_stats(
         .group_by(Port.port)
         .order_by(func.count(Port.id).desc())
     )
-
-    if scan_id:
-        host_ids = select(Host.id).where(Host.scan_id == scan_id)
-        query = query.where(Port.host_id.in_(host_ids))
-
+    query = _filter_by_scan(query, scan_id)
     rows = session.exec(query).all()
     return [{"port": row.port, "count": row.count} for row in rows]
 
@@ -46,11 +50,7 @@ def top_ports(
         .order_by(func.count(Port.id).desc())
         .limit(limit)
     )
-
-    if scan_id:
-        host_ids = select(Host.id).where(Host.scan_id == scan_id)
-        query = query.where(Port.host_id.in_(host_ids))
-
+    query = _filter_by_scan(query, scan_id)
     rows = session.exec(query).all()
     return [{"port": r.port, "protocol": r.protocol, "count": r.count} for r in rows]
 
@@ -67,10 +67,6 @@ def service_distribution(
         .group_by(Port.service)
         .order_by(func.count(Port.id).desc())
     )
-
-    if scan_id:
-        host_ids = select(Host.id).where(Host.scan_id == scan_id)
-        query = query.where(Port.host_id.in_(host_ids))
-
+    query = _filter_by_scan(query, scan_id)
     rows = session.exec(query).all()
     return [{"service": r.service, "count": r.count} for r in rows]
