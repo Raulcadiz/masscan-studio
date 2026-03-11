@@ -36,7 +36,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=["*"],   # open — SPA is served from the same origin in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,6 +68,10 @@ if _DIST.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
+        # Hard guard: never intercept /api/* paths — let the routers handle them
+        if full_path.startswith("api/") or full_path == "api":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
         # Serve exact static file if it exists (favicon, manifest, etc.)
         candidate = _DIST / full_path
         if candidate.is_file():
