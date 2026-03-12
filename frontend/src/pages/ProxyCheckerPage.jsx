@@ -35,7 +35,7 @@ export default function ProxyCheckerPage() {
 
   // ── Checker state ──────────────────────────────────────────────────────────
   const [raw, setRaw]             = useState('')
-  const [testUrl, setTestUrl]     = useState('https://www.google.com')
+  const [testUrl, setTestUrl]     = useState('http://www.google.com')
   const [timeout, setTimeoutVal]  = useState(10)
   const [concurrency, setConcurrency] = useState(50)
   const [results, setResults]     = useState([])
@@ -121,7 +121,7 @@ export default function ProxyCheckerPage() {
 
     try {
       const scan = await api.createScan({
-        name:         `Proxy Discovery${selectedCountry ? ` — ${selectedCountry.name}` : ''}`,
+        name:         `Proxy Discovery${selectedCountry ? ` - ${selectedCountry.name}` : ''}`,
         targets:      discTargets,
         ports:        discPorts,
         rate:         discRate,

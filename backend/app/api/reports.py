@@ -89,8 +89,15 @@ def _build_txt_lines(data: dict, header: bool = True) -> list[str]:
 
 
 def _safe_filename(scan: dict) -> str:
-    name = (scan["name"] or f"scan{scan['id']}").replace(" ", "_")
-    return f"scan_{scan['id']}_{name}"
+    import re
+    name = scan["name"] or f"scan{scan['id']}"
+    # Strip non-ASCII (accents, em-dashes, etc.) so the HTTP header never breaks
+    name = name.encode("ascii", "ignore").decode("ascii")
+    # Replace anything that isn't alphanumeric / hyphen / dot with underscore
+    name = re.sub(r"[^\w\-.]", "_", name)
+    # Collapse multiple underscores and trim edges
+    name = re.sub(r"_+", "_", name).strip("_")
+    return f"scan_{scan['id']}_{name or 'unnamed'}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -124,7 +131,7 @@ def export_all_txt(session: Session = Depends(get_session)):
     return StreamingResponse(
         iter([content]),
         media_type="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -192,7 +199,7 @@ def _export_txt(data: dict) -> StreamingResponse:
     return StreamingResponse(
         iter([content]),
         media_type="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -211,7 +218,7 @@ def _export_csv(data: dict) -> StreamingResponse:
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

@@ -123,12 +123,10 @@ async def _check_one(proxy_raw: str, test_url: str, timeout: int) -> dict:
 
     err = None
     try:
-        transport = httpx.AsyncHTTPTransport(
-            proxy=httpx.Proxy(proxy_url),
-            verify=False,
-        )
+        # proxies= routes ALL traffic (HTTP + HTTPS/CONNECT) through the proxy.
+        # The old transport= approach bypassed HTTPS, causing false-positives.
         async with httpx.AsyncClient(
-            transport=transport,
+            proxies=proxy_url,
             timeout=timeout,
             follow_redirects=True,
             verify=False,
@@ -138,7 +136,7 @@ async def _check_one(proxy_raw: str, test_url: str, timeout: int) -> dict:
             elapsed = round((time.monotonic() - t0) * 1000, 1)
             return {
                 "proxy": proxy_raw,
-                "alive": r.status_code < 500,
+                "alive": 200 <= r.status_code < 400,
                 "response_time": elapsed,
                 "status_code": r.status_code,
                 "error": None,
@@ -171,7 +169,7 @@ async def _check_one(proxy_raw: str, test_url: str, timeout: int) -> dict:
 
 class ProxyCheckRequest(BaseModel):
     proxies: List[str]
-    test_url: str = "https://www.google.com"
+    test_url: str = "http://www.google.com"
     timeout: int = 10
     concurrency: int = 50
 
