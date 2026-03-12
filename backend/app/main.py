@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db.database import create_db_and_tables
-from app.api import scans, hosts, ports, reports, proxies
+from app.api import scans, hosts, ports, reports, proxies, fingerprint
 
 # Path to the compiled frontend (created by: cd frontend && npm run build)
 _DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -47,7 +47,8 @@ app.include_router(scans.router,   prefix="/api/scans",   tags=["scans"])
 app.include_router(hosts.router,   prefix="/api/hosts",   tags=["hosts"])
 app.include_router(ports.router,   prefix="/api/ports",   tags=["ports"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
-app.include_router(proxies.router, prefix="/api/proxies", tags=["proxies"])
+app.include_router(proxies.router,      prefix="/api/proxies",      tags=["proxies"])
+app.include_router(fingerprint.router,  prefix="/api/fingerprint",  tags=["fingerprint"])
 
 
 @app.get("/health", tags=["health"])

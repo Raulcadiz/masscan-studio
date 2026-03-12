@@ -92,6 +92,41 @@ export const api = {
     }
   },
 
+  /**
+   * Stream fingerprint results via SSE.
+   * Events:
+   *   { type: 'result', ip, port, service, server, title, banner,
+   *                     status_code, ssl, category, label, icon }
+   *   { type: 'done',   total }
+   */
+  fingerprintStream: async (data, onEvent, signal) => {
+    const res = await fetch(`${BASE}/fingerprint/scan`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(data),
+      signal,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'Request failed')
+    }
+    const reader  = res.body.getReader()
+    const decoder = new TextDecoder()
+    let   buffer  = ''
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try { onEvent(JSON.parse(line.slice(6))) } catch (_) { /* ignore */ }
+      }
+    }
+  },
+
   // Reports — return URL strings for use in <a href> download links
   reportUrl:      (scan_id, format = 'json') => `${BASE}/reports/${scan_id}?format=${format}`,
   reportTxtUrl:   (scan_id)                  => `${BASE}/reports/${scan_id}?format=txt`,

@@ -6,6 +6,7 @@ import NewScanPage from './pages/NewScanPage'
 import ScanDetailPage from './pages/ScanDetailPage'
 import ComparatorPage from './pages/ComparatorPage'
 import ProxyCheckerPage from './pages/ProxyCheckerPage'
+import ServiceScanPage from './pages/ServiceScanPage'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/scans/:id"  element={<ScanDetailPage />} />
         <Route path="/compare"    element={<ComparatorPage />} />
         <Route path="/proxies"    element={<ProxyCheckerPage />} />
+        <Route path="/fingerprint" element={<ServiceScanPage />} />
       </Routes>
     </Layout>
   )

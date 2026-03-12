@@ -6,14 +6,16 @@ import {
   GitCompareArrows,
   Scan,
   ShieldCheck,
+  Fingerprint,
 } from 'lucide-react'
 
 const NAV = [
-  { to: '/',          label: 'Dashboard',  Icon: LayoutDashboard, end: true },
-  { to: '/scans/new', label: 'New Scan',   Icon: Plus },
-  { to: '/scans',     label: 'All Scans',  Icon: List },
-  { to: '/compare',   label: 'Comparator', Icon: GitCompareArrows },
-  { to: '/proxies',   label: 'Proxies',    Icon: ShieldCheck },
+  { to: '/',             label: 'Dashboard',    Icon: LayoutDashboard, end: true },
+  { to: '/scans/new',    label: 'New Scan',     Icon: Plus },
+  { to: '/scans',        label: 'All Scans',    Icon: List },
+  { to: '/compare',      label: 'Comparator',   Icon: GitCompareArrows },
+  { to: '/proxies',      label: 'Proxies',      Icon: ShieldCheck },
+  { to: '/fingerprint',  label: 'Fingerprint',  Icon: Fingerprint },
 ]
 
 export default function Sidebar() {
