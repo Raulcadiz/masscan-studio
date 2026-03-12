@@ -1,0 +1,40 @@
+# ── Original masscan C build artifacts ──────────────────────────
+paused.conf
+.Makefile.swp
+.vscode
+vs10/.vs/
+
+# ── Python / Backend ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Node / Frontend ──────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── OS ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editors ──────────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
+
+# ── Masscan raw output ───────────────────────────────────────────
+*.xml
+*.gnmap
+*.nmap
+
+# ── Logs ─────────────────────────────────────────────────────────
+*.log

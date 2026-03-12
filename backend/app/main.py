@@ -8,14 +8,15 @@ if sys.platform == "win32":
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db.database import create_db_and_tables
-from app.api import scans, hosts, ports, reports
+from app.api import scans, hosts, ports, reports, proxies
 
 # Path to the compiled frontend (created by: cd frontend && npm run build)
 _DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -36,16 +37,17 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # open — SPA is served from the same origin in prod
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
-app.include_router(hosts.router, prefix="/api/hosts", tags=["hosts"])
-app.include_router(ports.router, prefix="/api/ports", tags=["ports"])
+app.include_router(scans.router,   prefix="/api/scans",   tags=["scans"])
+app.include_router(hosts.router,   prefix="/api/hosts",   tags=["hosts"])
+app.include_router(ports.router,   prefix="/api/ports",   tags=["ports"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(proxies.router, prefix="/api/proxies", tags=["proxies"])
 
 
 @app.get("/health", tags=["health"])
@@ -54,10 +56,11 @@ def health():
 
 
 # ── Production: serve the compiled React frontend ─────────────────────────────
-# Only active when `frontend/dist/` exists (after `npm run build`).
-# All React-Router paths are handled by the SPA catch-all at the bottom.
+# Strategy: serve /assets/* as static files, serve index.html for root,
+# and use a 404 exception handler (NOT a catch-all route) to handle all
+# React Router paths.  This way the exception handler only fires AFTER all
+# API routes have had a chance to match — no routing conflicts.
 if _DIST.exists():
-    # /assets/* → JS / CSS / images produced by Vite
     _assets = _DIST / "assets"
     if _assets.exists():
         app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
@@ -66,18 +69,20 @@ if _DIST.exists():
     async def serve_root():
         return FileResponse(str(_DIST / "index.html"))
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(full_path: str):
-        # Hard guard: never intercept /api/* paths — let the routers handle them
-        if full_path.startswith("api/") or full_path == "api":
-            from fastapi import HTTPException
-            raise HTTPException(status_code=404, detail="Not found")
-        # Serve exact static file if it exists (favicon, manifest, etc.)
-        candidate = _DIST / full_path
-        if candidate.is_file():
-            return FileResponse(str(candidate))
-        # Otherwise serve index.html so React-Router handles the path
-        return FileResponse(str(_DIST / "index.html"))
+    @app.exception_handler(404)
+    async def spa_fallback(request: Request, exc: HTTPException):
+        """
+        Runs only when NO route matched.
+        - /api/* paths  → return JSON 404 (real API miss)
+        - everything else → serve index.html (React Router handles it)
+        """
+        if request.url.path.startswith("/api"):
+            return JSONResponse({"detail": exc.detail}, status_code=404)
+        index = _DIST / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
 else:
     @app.get("/", tags=["health"])
     def root():

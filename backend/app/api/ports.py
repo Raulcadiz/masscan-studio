@@ -19,6 +19,7 @@ def _filter_by_scan(query, scan_id: Optional[int]):
 @router.get("/stats")
 def port_stats(
     scan_id: Optional[int] = None,
+    limit: int = Query(default=20, le=100),
     session: Session = Depends(get_session),
 ):
     """
@@ -30,6 +31,7 @@ def port_stats(
         .where(Port.state == "open")
         .group_by(Port.port)
         .order_by(func.count(Port.id).desc())
+        .limit(limit)
     )
     query = _filter_by_scan(query, scan_id)
     rows = session.exec(query).all()

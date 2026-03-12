@@ -5,6 +5,7 @@ import {
   List,
   GitCompareArrows,
   Scan,
+  ShieldCheck,
 } from 'lucide-react'
 
 const NAV = [
@@ -12,6 +13,7 @@ const NAV = [
   { to: '/scans/new', label: 'New Scan',   Icon: Plus },
   { to: '/scans',     label: 'All Scans',  Icon: List },
   { to: '/compare',   label: 'Comparator', Icon: GitCompareArrows },
+  { to: '/proxies',   label: 'Proxies',    Icon: ShieldCheck },
 ]
 
 export default function Sidebar() {

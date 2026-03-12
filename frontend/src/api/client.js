@@ -1,16 +1,28 @@
 const BASE = '/api'
+const TIMEOUT_MS = 15000
 
-async function req(path, opts = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
-    ...opts,
-  })
-  if (res.status === 204) return null
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Request failed')
+async function req(path, opts = {}, timeoutMs = TIMEOUT_MS) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...opts.headers },
+      signal: controller.signal,
+      ...opts,
+    })
+    if (res.status === 204) return null
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'Request failed')
+    }
+    return res.json()
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Request timed out — is the backend running?')
+    throw e
+  } finally {
+    clearTimeout(timer)
   }
-  return res.json()
 }
 
 export const api = {
@@ -34,6 +46,9 @@ export const api = {
   topPorts:   (limit = 20, scan_id) =>
     req(`/ports/top?limit=${limit}${scan_id != null ? `&scan_id=${scan_id}` : ''}`),
   services:   (scan_id) => req(`/ports/services${scan_id != null ? `?scan_id=${scan_id}` : ''}`),
+
+  // Proxies — long timeout: N proxies / concurrency * timeout_s * 1000 ms
+  checkProxies: (data) => req('/proxies/check', { method: 'POST', body: JSON.stringify(data) }, 300_000),
 
   // Reports — return URL strings for use in <a href> download links
   reportUrl:      (scan_id, format = 'json') => `${BASE}/reports/${scan_id}?format=${format}`,
