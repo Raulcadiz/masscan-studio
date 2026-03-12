@@ -1,10 +1,12 @@
 import asyncio
+import json
 import time
 from typing import List, Optional
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -181,8 +183,8 @@ class ProxyCheckRequest(BaseModel):
 @router.post("/check")
 async def check_proxies(payload: ProxyCheckRequest):
     """
-    Test proxies concurrently and return results enriched with country info.
-    GeoIP lookup runs in parallel with proxy checking — no extra wait time.
+    Test proxies concurrently and return all results in one JSON response.
+    For large lists use /check/stream to avoid browser timeouts.
     """
     proxies = [p.strip() for p in payload.proxies if p.strip()]
     if not proxies:
@@ -194,7 +196,6 @@ async def check_proxies(payload: ProxyCheckRequest):
         async with sem:
             return await _check_one(proxy, payload.test_url, payload.timeout)
 
-    # Run proxy checks and GeoIP lookup simultaneously
     unique_ips   = list({_extract_ip(p) for p in proxies} - {None})
     check_coro   = asyncio.gather(*[bounded(p) for p in proxies])
     country_coro = _lookup_countries(unique_ips)
@@ -202,7 +203,6 @@ async def check_proxies(payload: ProxyCheckRequest):
     results_raw, countries = await asyncio.gather(check_coro, country_coro)
     results = list(results_raw)
 
-    # Merge country data into each result
     for r in results:
         ip  = _extract_ip(r["proxy"])
         geo = countries.get(ip, {})
@@ -211,3 +211,65 @@ async def check_proxies(payload: ProxyCheckRequest):
         r["flag"]         = geo.get("flag", "")
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Streaming endpoint  (SSE — no browser timeout, real-time results)
+# ---------------------------------------------------------------------------
+
+_SSE_HEADERS = {
+    "Cache-Control":    "no-cache",
+    "X-Accel-Buffering": "no",   # disable Nginx buffering
+    "Connection":       "keep-alive",
+}
+
+
+@router.post("/check/stream")
+async def check_proxies_stream(payload: ProxyCheckRequest):
+    """
+    Same as /check but streams results via Server-Sent Events as they finish.
+
+    Events emitted:
+      {"type":"result",   ...proxy_fields...}       – one per proxy
+      {"type":"countries","data":{ip:{...}}}         – GeoIP batch (sent once)
+      {"type":"done",     "total":N, "alive":N}      – final summary
+    """
+    proxies = [p.strip() for p in payload.proxies if p.strip()]
+
+    async def generate():
+        if not proxies:
+            yield f"data: {json.dumps({'type':'done','total':0,'alive':0})}\n\n"
+            return
+
+        sem          = asyncio.Semaphore(min(payload.concurrency, 200))
+        queue: asyncio.Queue = asyncio.Queue()
+        unique_ips   = list({_extract_ip(p) for p in proxies} - {None})
+
+        async def _run(proxy: str):
+            async with sem:
+                result = await _check_one(proxy, payload.test_url, payload.timeout)
+                await queue.put(result)
+
+        # Kick off all checks + GeoIP concurrently
+        tasks        = [asyncio.create_task(_run(p)) for p in proxies]
+        country_task = asyncio.create_task(_lookup_countries(unique_ips))
+
+        alive_count = 0
+        for _ in range(len(proxies)):
+            result = await queue.get()
+            if result["alive"]:
+                alive_count += 1
+            yield f"data: {json.dumps({'type': 'result', **result})}\n\n"
+
+        # Deliver GeoIP data (wait up to 60 s after checks finish)
+        try:
+            countries = await asyncio.wait_for(country_task, timeout=60)
+        except Exception:
+            countries = {}
+
+        if countries:
+            yield f"data: {json.dumps({'type': 'countries', 'data': countries})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done', 'total': len(proxies), 'alive': alive_count})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream", headers=_SSE_HEADERS)
