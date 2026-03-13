@@ -1,13 +1,16 @@
 from sqlalchemy import event
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, create_engine, Session
 from app.config import settings
 
+# NullPool: every thread/coroutine gets its own fresh connection immediately —
+# no queue, no "QueuePool limit" timeouts under concurrency.
+# Correct for SQLite + WAL mode + check_same_thread=False.
 engine = create_engine(
     settings.database_url,
     echo=False,
-    connect_args={"check_same_thread": False, "timeout": 60},
-    pool_size=1,
-    max_overflow=0,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    poolclass=NullPool,
 )
 
 

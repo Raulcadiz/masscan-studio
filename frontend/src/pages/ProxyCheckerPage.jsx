@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   ShieldCheck, Play, Square, Download, Trash2, Clock,
-  CheckCircle, XCircle, AlertCircle, Search, Globe, ChevronDown, Info,
+  CheckCircle, XCircle, AlertCircle, Search, Globe, ChevronDown, Info, FolderOpen,
 } from 'lucide-react'
+
+const VISIBLE_MAX = 500   // max rows rendered in DOM at once (perf guard)
 import { api } from '../api/client'
 import Spinner from '../components/ui/Spinner'
 import Badge from '../components/ui/Badge'
@@ -51,7 +53,8 @@ export default function ProxyCheckerPage() {
   const [progress, setProgress]       = useState({ checked: 0, total: 0 })
   const [checking, setChecking]       = useState(false)
   const [checkError, setCheckError]   = useState(null)
-  const abortRef = useRef(null)
+  const abortRef  = useRef(null)
+  const fileRef   = useRef(null)
 
   // ── Discover state ─────────────────────────────────────────────────────────
   const [discMode, setDiscMode]           = useState('country')
@@ -126,6 +129,15 @@ export default function ProxyCheckerPage() {
     setResults([])
     setProgress({ checked: 0, total: 0 })
     setCheckError(null)
+  }
+
+  function handleFileLoad(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setRaw(ev.target.result)
+    reader.readAsText(file)
+    e.target.value = ''   // allow re-selecting same file
   }
 
   function exportAlive() {
@@ -267,9 +279,18 @@ export default function ProxyCheckerPage() {
                 <label className="text-xs font-medium text-gray-400">
                   Proxy List <span className="text-gray-600">(one per line)</span>
                 </label>
-                {proxyLines.length > 0 && (
-                  <span className="text-xs text-gray-600">{proxyLines.length.toLocaleString()} proxies</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {proxyLines.length > 0 && (
+                    <span className="text-xs text-gray-600">{proxyLines.length.toLocaleString()} proxies</span>
+                  )}
+                  <button type="button" onClick={() => fileRef.current?.click()}
+                    title="Cargar desde archivo .txt"
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors">
+                    <FolderOpen size={11} /> Cargar .txt
+                  </button>
+                  <input ref={fileRef} type="file" accept=".txt,text/plain"
+                    onChange={handleFileLoad} className="hidden" />
+                </div>
               </div>
               <textarea
                 rows={11}
@@ -394,6 +415,12 @@ export default function ProxyCheckerPage() {
             {/* Results table */}
             {results.length > 0 && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                {results.length > VISIBLE_MAX && (
+                  <div className="px-3 py-2 text-xs text-yellow-400/80 bg-yellow-400/5 border-b border-yellow-400/10 flex items-center gap-1.5">
+                    <Info size={11} />
+                    Mostrando {VISIBLE_MAX.toLocaleString()} de {results.length.toLocaleString()} — exporta el TXT para ver todos
+                  </div>
+                )}
                 <div className="overflow-y-auto max-h-[420px]">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-gray-900 border-b border-gray-800 z-10">
@@ -407,7 +434,7 @@ export default function ProxyCheckerPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800/60">
-                      {results.map((r, i) => (
+                      {results.slice(0, VISIBLE_MAX).map((r, i) => (
                         <tr key={i}
                           className={r.alive
                             ? 'hover:bg-green-500/5'
