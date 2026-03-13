@@ -133,6 +133,7 @@ class ScanOrchestrator:
             hosts = session.exec(
                 select(Host).where(Host.scan_id == scan_id)
             ).all()
+            hosts = list(hosts)
 
         for host in hosts:
             with Session(engine) as session:
@@ -141,17 +142,13 @@ class ScanOrchestrator:
                 ).all()
                 port_numbers = [p.port for p in ports if p.port is not None]
 
-            if not port_numbers:
-                continue
+                if not port_numbers:
+                    continue
 
-            nmap_info = await self.nmap.detect_services(host.ip, port_numbers)
-            if not nmap_info:
-                continue
+                nmap_info = await self.nmap.detect_services(host.ip, port_numbers)
+                if not nmap_info:
+                    continue
 
-            with Session(engine) as session:
-                ports = session.exec(
-                    select(Port).where(Port.host_id == host.id)
-                ).all()
                 for port_row in ports:
                     enriched = nmap_info.get(port_row.port, {})
                     if enriched:
